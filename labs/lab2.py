@@ -12,16 +12,9 @@ def read_pdf(file):
         text += page.extract_text() or ""
     return text
 
+st.title("📄 Lab 2")
 
-
-
-st.title("📄 PDF READER")
-lab1 = st.Page("labs/lab1.py", title = ' Lab 1 ', icon = '📝' )
-lab2 = st.Page("labs/lab2.py", title = ' Lab 2 ', icon = '📝' )
-pg = st.navigation( {lab2, lab1})
 openai_api_key = secret_key
-st.set_page_config(page_title = 'IST 488 Labs',
-    initial_sidebar_state = 'expanded')
 
 # Initialize session state if needed
 if "api_key_valid" not in st.session_state:
@@ -39,16 +32,16 @@ uploaded_file = st.file_uploader(
 
 # Sidebar controls for summary type and model selection
 st.sidebar.header("Summary Options")
-summary_type = st.sidebar.radio(
+summary_type = st.sidebar.selectbox(
     "Type of summary",
-    (
+    [
         "Summarize the document in 100 words",
         "Summarize the document in 2 connecting paragraphs",
         "Summarize the document in 5 bullet points",
-    ),
+    ],
 )
-model_choice = st.sidebar.selectbox("Model size", ("mini", "nano"))
-use_advanced = st.sidebar.checkbox("Use advanced model (gpt-4o)")
+
+use_advanced = st.sidebar.checkbox("Use advanced model")
 
 generate = st.sidebar.button("Generate Summary")
 
@@ -71,10 +64,7 @@ if uploaded_file and generate:
     if use_advanced:
         model = "gpt-4o"
     else:
-        if model_choice == "mini":
-            model = "gpt-3.5-mini"
-        else:
-            model = "gpt-3.5-nano"
+        model = "gpt-3.5-nano"
 
     # Include the summary type explicitly in the LLM instructions
     instruction = (
