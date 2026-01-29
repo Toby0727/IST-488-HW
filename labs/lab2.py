@@ -34,12 +34,23 @@ uploaded_file = st.file_uploader(
     "Upload a document (.txt or .pdf)", type=("txt", "pdf")
 )
 
-question = st.text_area(
-    "Ask a question about the document",
-    disabled=not uploaded_file,
+# Sidebar controls for summary type and model selection
+st.sidebar.header("Summary Options")
+summary_type = st.sidebar.radio(
+    "Type of summary",
+    (
+        "Summarize the document in 100 words",
+        "Summarize the document in 2 connecting paragraphs",
+        "Summarize the document in 5 bullet points",
+    ),
 )
+model_choice = st.sidebar.selectbox("Model size", ("mini", "nano"))
+use_advanced = st.sidebar.checkbox("Use advanced model (gpt-4o)")
 
-if uploaded_file and question:
+generate = st.sidebar.button("Generate Summary")
+
+# When a file is uploaded and the user clicks Generate, produce a summary
+if uploaded_file and generate:
 
     file_extension = uploaded_file.name.split(".")[-1]
 
@@ -53,18 +64,34 @@ if uploaded_file and question:
         st.error("Unsupported file type.")
         st.stop()
 
-    messages = [
-        {
-            "role": "user",
-            "content": f"Here is the document:\n\n{document}\n\n---\n\n{question}",
-        }
-    ]
+    # Choose model based on user selection
+    if use_advanced:
+        model = "gpt-4o"
+    else:
+        if model_choice == "mini":
+            model = "gpt-3.5-mini"
+        else:
+            model = "gpt-3.5-nano"
 
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
+    # Include the summary type explicitly in the LLM instructions
+    instruction = (
+        f"{summary_type}. Provide the summary only and do not include the original document text."
     )
 
-    st.write(response.choices[0].message.content)
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
+        {"role": "user", "content": f"{instruction}\n\nDocument:\n\n{document}"},
+    ]
+
+    with st.spinner("Generating summary..."):
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+        )
+
+    summary = response.choices[0].message.content
+
+    st.subheader("Summary")
+    st.write(summary)
 
 
