@@ -4,8 +4,6 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-openai_api_key = st.secrets.OPENAI_API_KEY
-gemini_api_key = st.secrets.GEMINI_API_KEY
 def read_url_content(url):
     try:
         response = requests.get(url)
@@ -17,8 +15,6 @@ def read_url_content(url):
         return None
     
 st.title("🌐 URL Summarizer")
-
-client = OpenAI(api_key=openai_api_key)
 
 url_input = st.text_input("Enter a URL to summarize")
 
@@ -56,30 +52,23 @@ if generate and url_input:
         document = read_url_content(url_input)
     
     if document:
-        # Validate API key before running
-        try:
-            if llm_choice == "OpenAI":
-                st.secrets.OPENAI_API_KEY
-            elif llm_choice == "Gemini":
-                st.secrets.GEMINI_API_KEY
-        except KeyError:
-            st.error(f"Missing API key for {llm_choice}. Please configure the {llm_choice} API key in Streamlit secrets.")
-        else:
-            # Include the summary type explicitly in the LLM instructions
-            instruction = (
-                f"{summary_type}. Provide the summary only and do not include the original document text. Output the summary in {language}."
-            )
+        # Include the summary type explicitly in the LLM instructions
+        instruction = (
+            f"{summary_type}. Provide the summary only and do not include the original document text. Output the summary in {language}."
+        )
 
+        try:
             with st.spinner(f"✨ Generating summary with {llm_choice}..."):
                 if llm_choice == "OpenAI":
-                    # Choose model based on user selection
+                    # Load and validate OpenAI key
+                    openai_api_key = st.secrets.OPENAI_API_KEY
+                    if not openai_api_key or not openai_api_key.strip():
+                        raise ValueError("OpenAI API key is empty or invalid")
+                    client = OpenAI(api_key=openai_api_key)
                     if use_advanced:
                         model = "gpt-4o"
                     else:
                         model = 'gpt-3.5-turbo'
-
-                    openai_api_key = st.secrets.OPENAI_API_KEY
-                    client = OpenAI(api_key=openai_api_key)
 
                     messages = [
                         {"role": "system", "content": "You are a helpful assistant that summarizes documents."},
@@ -93,7 +82,11 @@ if generate and url_input:
                     summary = response.choices[0].message.content
 
                 elif llm_choice == "Gemini":
-                    genai.configure(api_key=st.secrets.GEMINI_API_KEY)
+                    # Load and validate Gemini key
+                    gemini_api_key = st.secrets.GEMINI_API_KEY
+                    if not gemini_api_key or not gemini_api_key.strip():
+                        raise ValueError("Gemini API key is empty or invalid")
+                    genai.configure(api_key=gemini_api_key)
                     
                     # Choose model based on user selection
                     if use_advanced:
@@ -107,8 +100,12 @@ if generate and url_input:
                     response = model.generate_content(prompt)
                     summary = response.text
 
-            st.subheader("Summary")
-            st.write(summary)
+                st.subheader("Summary")
+                st.write(summary)
+        except KeyError as e:
+            st.error(f"Missing API key: {e}. Please configure the {llm_choice} API key in Streamlit secrets.")
+        except ValueError as e:
+            st.error(f"Invalid API key: {e}")
     else:
         st.error("Could not read the URL. Please check the URL and try again.")
 elif generate and not url_input:
