@@ -61,7 +61,11 @@ if generate and url_input:
             with st.spinner(f"✨ Generating summary with {llm_choice}..."):
                 if llm_choice == "OpenAI":
                     # Load and validate OpenAI key
-                    openai_api_key = st.secrets.OPENAI_API_KEY
+                    try:
+                        openai_api_key = st.secrets.OPENAI_API_KEY
+                    except (KeyError, AttributeError):
+                        raise KeyError("OPENAI_API_KEY")
+                    
                     if not openai_api_key or not openai_api_key.strip():
                         raise ValueError("OpenAI API key is empty or invalid")
                     client = OpenAI(api_key=openai_api_key)
@@ -83,7 +87,11 @@ if generate and url_input:
 
                 elif llm_choice == "Gemini":
                     # Load and validate Gemini key
-                    gemini_api_key = st.secrets.GEMINI_API_KEY
+                    try:
+                        gemini_api_key = st.secrets.GEMINI_API_KEY
+                    except (KeyError, AttributeError):
+                        raise KeyError("GEMINI_API_KEY")
+                    
                     if not gemini_api_key or not gemini_api_key.strip():
                         raise ValueError("Gemini API key is empty or invalid")
                     genai.configure(api_key=gemini_api_key)
