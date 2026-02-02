@@ -1,7 +1,7 @@
 import streamlit as st
-lab1 = st.Page('labs/lab1.py' , title = 'lab 1')
-lab2 = st.Page('labs/lab2.py' , title = 'lab 2', default=True)
-pg = st.navigation([lab1, lab2])
+HW 1 = st.Page('HW/HW 1.py' , title = 'HW 1')
+HW 2 = st.Page('HW/HW 2.py' , title = 'HW 2', default=True)
+pg = st.navigation([HW 1, HW 2])
 st.set_page_config(page_title= 'HW Manager', initial_sidebar_state='expanded')
 
 
