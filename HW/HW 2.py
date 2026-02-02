@@ -3,7 +3,6 @@ from openai import OpenAI
 from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
-from anthropic import Anthropic
 
 secret_key = st.secrets.OPENAI_API_KEY
 def read_url_content(url):
@@ -39,7 +38,7 @@ use_advanced = st.sidebar.checkbox("Use advanced model")
 # LLM selection dropdown
 llm_choice = st.sidebar.selectbox(
     "Select LLM",
-    ["OpenAI", "Gemini", "Claude"],
+    ["OpenAI", "Gemini"],
     key="llm_selection"
 )
 
@@ -53,7 +52,9 @@ language = st.sidebar.selectbox(
 generate = st.sidebar.button("Generate Summary")
 
 if generate and url_input:
-    document = read_url_content(url_input)
+    with st.spinner("📖 Reading URL content..."):
+        document = read_url_content(url_input)
+    
     if document:
         # Validate API key before running
         try:
@@ -61,8 +62,6 @@ if generate and url_input:
                 st.secrets.OPENAI_API_KEY
             elif llm_choice == "Gemini":
                 st.secrets.GEMINI_API_KEY
-            elif llm_choice == "Claude":
-                st.secrets.CLAUDE_API_KEY
         except KeyError:
             st.error(f"Missing API key for {llm_choice}. Please configure the {llm_choice} API key in Streamlit secrets.")
         else:
@@ -71,7 +70,7 @@ if generate and url_input:
                 f"{summary_type}. Provide the summary only and do not include the original document text. Output the summary in {language}."
             )
 
-            with st.spinner("Generating summary..."):
+            with st.spinner(f"✨ Generating summary with {llm_choice}..."):
                 if llm_choice == "OpenAI":
                     # Choose model based on user selection
                     if use_advanced:
@@ -107,24 +106,6 @@ if generate and url_input:
                     prompt = f"{instruction}\n\nDocument:\n\n{document}"
                     response = model.generate_content(prompt)
                     summary = response.text
-
-                elif llm_choice == "Claude":
-                    client_claude = Anthropic(api_key=st.secrets.CLAUDE_API_KEY)
-                    
-                    # Choose model based on user selection
-                    if use_advanced:
-                        model_name = "claude-3-opus-20250219"
-                    else:
-                        model_name = "claude-3-5-sonnet-20241022"
-                    
-                    message = client_claude.messages.create(
-                        model=model_name,
-                        max_tokens=1024,
-                        messages=[
-                            {"role": "user", "content": f"{instruction}\n\nDocument:\n\n{document}"}
-                        ]
-                    )
-                    summary = message.content[0].text
 
             st.subheader("Summary")
             st.write(summary)
