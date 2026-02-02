@@ -4,7 +4,8 @@ from bs4 import BeautifulSoup
 import requests
 import google.generativeai as genai
 
-secret_key = st.secrets.OPENAI_API_KEY
+openai_api_key = st.secrets.OPENAI_API_KEY
+gemini_api_key = st.secrets.GEMINI_API_KEY
 def read_url_content(url):
     try:
         response = requests.get(url)
@@ -17,7 +18,6 @@ def read_url_content(url):
     
 st.title("🌐 URL Summarizer")
 
-openai_api_key = secret_key
 client = OpenAI(api_key=openai_api_key)
 
 url_input = st.text_input("Enter a URL to summarize")
