@@ -34,6 +34,13 @@ summary_type = st.sidebar.selectbox(
 
 use_advanced = st.sidebar.checkbox("Use advanced model")
 
+# Language selection dropdown
+language = st.sidebar.selectbox(
+    "Select Output Language",
+    ["English", "Chinese", "French", "Turkish"],
+    key="output_language"
+)
+
 generate = st.sidebar.button("Generate Summary")
 
 if generate and url_input:
@@ -47,7 +54,7 @@ if generate and url_input:
 
         # Include the summary type explicitly in the LLM instructions
         instruction = (
-            f"{summary_type}. Provide the summary only and do not include the original document text."
+            f"{summary_type}. Provide the summary only and do not include the original document text. Output the summary in {language}."
         )
 
         messages = [
