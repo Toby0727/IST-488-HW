@@ -206,9 +206,14 @@ SYSTEM_PROMPT = {
     "content": system_content
 }
 
-# Initialize session state WITH system prompt
+# Initialize or update session state WITH system prompt
 if "messages" not in st.session_state:
     st.session_state.messages = [SYSTEM_PROMPT]
+else:
+    if not st.session_state.messages or st.session_state.messages[0].get("role") != "system":
+        st.session_state.messages.insert(0, SYSTEM_PROMPT)
+    else:
+        st.session_state.messages[0]["content"] = system_content
 
 # Display all previous messages (skip system prompt)
 for message in st.session_state.messages:
