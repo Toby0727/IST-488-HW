@@ -73,8 +73,8 @@ url_2 = st.sidebar.text_input(
 
 st.sidebar.divider()
 
-# Combine URLs - use first URL if available, otherwise second
-url = [u for u in (url_1, url_2) if u]
+# Combine URLs (use one or both if provided)
+urls = [u for u in (url_1, url_2) if u]
 
 
 # ===== LLM VENDOR SELECTION =====
@@ -114,34 +114,10 @@ st.sidebar.info(f"**Current Model:** {model_display}")
 
 st.sidebar.divider()
 
-# ===== BUFFER TYPE SELECTOR =====
+# ===== BUFFER CONFIG =====
 st.sidebar.subheader("💾 Conversation Memory")
-
-buffer_type = st.sidebar.radio(
-    "Buffer Type:",
-    options=["Message-based", "Token-based"],
-    index=0
-)
-
-# ===== BUFFER CONTROLS =====
-if buffer_type == "Message-based":
-    buffer_size = st.sidebar.slider(
-        "Number of exchanges to remember:",
-        min_value=1,
-        max_value=10,
-        value=3,  # 3 exchanges = 6 messages
-        step=1
-    )
-    st.sidebar.write(f"**Keeping last {buffer_size} exchanges ({buffer_size * 2} messages)**")
-else:
-    max_tokens = st.sidebar.slider(
-        "Max tokens for context:",
-        min_value=100,
-        max_value=20000,
-        value=2000,
-        step=100
-    )
-    st.sidebar.write(f"**Max tokens: {max_tokens}**")
+buffer_size = 3  # 3 exchanges = 6 messages
+st.sidebar.write("**Keeping last 3 exchanges (6 messages)**")
 
 # ===== HELPER FUNCTIONS =====
 def count_tokens_approximate(messages):
@@ -177,43 +153,6 @@ def get_buffered_messages(all_messages, buffer_size=3):
     # Return system prompt + buffered conversation
     return [system_prompt] + buffered_conversation if system_prompt else buffered_conversation
 
-def get_token_buffered_messages(all_messages, max_tokens=2000):
-    """
-    Keep system prompt + messages that fit within token limit
-    System prompt is ALWAYS kept!
-    """
-    if not all_messages:
-        return []
-    
-    # Extract system prompt (should be first message)
-    system_prompt = all_messages[0] if all_messages[0]["role"] == "system" else None
-    
-    # Get conversation messages
-    conversation = all_messages[1:] if system_prompt else all_messages
-    
-    # Count system prompt tokens
-    system_tokens = count_tokens_approximate([system_prompt]) if system_prompt else 0
-    
-    # Calculate remaining tokens for conversation
-    remaining_tokens = max_tokens - system_tokens
-    
-    if remaining_tokens <= 0:
-        return [system_prompt] if system_prompt else []
-    
-    # Build buffered conversation from most recent messages
-    buffered = []
-    current_tokens = 0
-    
-    for message in reversed(conversation):
-        message_tokens = count_tokens_approximate([message])
-        if current_tokens + message_tokens > remaining_tokens:
-            break
-        buffered.insert(0, message)
-        current_tokens += message_tokens
-    
-    # Return system prompt + buffered conversation
-    return [system_prompt] + buffered if system_prompt else buffered
-
 # ===== BUILD SYSTEM PROMPT WITH URL CONTEXT =====
 base_instructions = """You are a helpful educational assistant that explains things in a way that 10-year-olds can understand.
 
@@ -242,14 +181,18 @@ Remember: Always use simple words and fun examples that kids can relate to!"""
 # Read URL content if provided
 url_context = ""
 
-if url:
-    with st.spinner(f"📖 Reading content from URL..."):
-        content = read_url_content(url)
-        if not content.startswith("Error"):
-            url_context = f"\n\nCONTEXT FROM URL:\n{content}\n"
+if urls:
+    with st.spinner("📖 Reading content from URL(s)..."):
+        url_sections = []
+        for index, url in enumerate(urls, start=1):
+            content = read_url_content(url)
+            if not content.startswith("Error"):
+                url_sections.append(f"URL {index}: {url}\n{content}")
+            else:
+                st.sidebar.error(f"❌ {content}")
+        if url_sections:
+            url_context = "\n\nCONTEXT FROM URL(S):\n" + "\n\n".join(url_sections) + "\n"
             st.sidebar.success("✅ URL loaded successfully!")
-        else:
-            st.sidebar.error(f"❌ {content}")
 
 # Combine instructions with URL context
 if url_context:
@@ -284,10 +227,7 @@ if prompt := st.chat_input("Ask me anything!"):
         st.markdown(prompt)
     
     # Create buffered messages (ALWAYS includes system prompt)
-    if buffer_type == "Message-based":
-        buffered_messages = get_buffered_messages(st.session_state.messages, buffer_size)
-    else:
-        buffered_messages = get_token_buffered_messages(st.session_state.messages, max_tokens)
+    buffered_messages = get_buffered_messages(st.session_state.messages, buffer_size)
     
     # Display statistics
     tokens_in_buffer = count_tokens_approximate(buffered_messages)
