@@ -2,6 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import requests
 from bs4 import BeautifulSoup
+import google.generativeai as genai
 
 # Page config
 st.set_page_config(page_title="Lab 3: Streaming Chatbot", initial_sidebar_state="expanded")
@@ -66,24 +67,46 @@ url = st.sidebar.text_input(
 
 st.sidebar.divider()
 
-# ===== MODEL SELECTOR =====
+# ===== LLM VENDOR SELECTION =====
 st.sidebar.title("Settings")
+st.sidebar.subheader("🤖 AI Model Selection")
 
-client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", ""))
-
-model_option = st.sidebar.selectbox(
-    "Select Model:",
-    options=[
-        "gpt-4o",
-        "gpt-4-turbo",
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "gpt-4o-mini"
-    ],
+llm_choice = st.sidebar.selectbox(
+    "Select AI Vendor:",
+    options=["OpenAI", "Gemini"],
     index=0
 )
 
+# Advanced model toggle
+use_advanced = st.sidebar.checkbox(
+    "Use Advanced Model",
+    value=False,
+    help="Use premium models (GPT-4o or Gemini-3-Flash-Preview)"
+)
+
+# Display which model will be used
+if llm_choice == "OpenAI":
+    if use_advanced:
+        model_display = "gpt-4o (Premium)"
+        model_option = "gpt-4o"
+    else:
+        model_display = "gpt-3.5-turbo (Standard)"
+        model_option = "gpt-3.5-turbo"
+elif llm_choice == "Gemini":
+    if use_advanced:
+        model_display = "gemini-3-flash-preview (Premium)"
+        model_option = "gemini-3-flash-preview"
+    else:
+        model_display = "gemini-2.5-flash (Standard)"
+        model_option = "gemini-2.5-flash"
+
+st.sidebar.info(f"**Current Model:** {model_display}")
+
+st.sidebar.divider()
+
 # ===== BUFFER TYPE SELECTOR =====
+st.sidebar.subheader("💾 Conversation Memory")
+
 buffer_type = st.sidebar.radio(
     "Buffer Type:",
     options=["Message-based", "Token-based"],
@@ -270,12 +293,65 @@ if prompt := st.chat_input("Ask me anything!"):
     
     # Get and display assistant response
     with st.chat_message("assistant"):
-        stream = client.chat.completions.create(
-            model=model_option,
-            messages=buffered_messages,  # Includes system prompt!
-            stream=True
-        )
-        response = st.write_stream(stream)
+        try:
+            if llm_choice == "OpenAI":
+                # Initialize OpenAI client
+                openai_api_key = st.secrets.get("OPENAI_API_KEY", "")
+                if not openai_api_key or not openai_api_key.strip():
+                    st.error("❌ OpenAI API key is missing or invalid")
+                    response = ""
+                else:
+                    client = OpenAI(api_key=openai_api_key)
+                    
+                    stream = client.chat.completions.create(
+                        model=model_option,
+                        messages=buffered_messages,
+                        stream=True
+                    )
+                    response = st.write_stream(stream)
+            
+            elif llm_choice == "Gemini":
+                # Initialize Gemini
+                gemini_api_key = st.secrets.get("GEMINI_API_KEY", "")
+                if not gemini_api_key or not gemini_api_key.strip():
+                    st.error("❌ Gemini API key is missing or invalid")
+                    response = ""
+                else:
+                    genai.configure(api_key=gemini_api_key)
+                    model = genai.GenerativeModel(model_option)
+                    
+                    # Convert messages to Gemini format (skip system message)
+                    gemini_messages = []
+                    system_content = ""
+                    
+                    for msg in buffered_messages:
+                        if msg["role"] == "system":
+                            system_content = msg["content"]
+                        elif msg["role"] == "user":
+                            gemini_messages.append({
+                                "role": "user",
+                                "parts": [msg["content"]]
+                            })
+                        elif msg["role"] == "assistant":
+                            gemini_messages.append({
+                                "role": "model",
+                                "parts": [msg["content"]]
+                            })
+                    
+                    # Prepend system instructions to first user message
+                    if gemini_messages and system_content:
+                        gemini_messages[0]["parts"][0] = f"{system_content}\n\n{gemini_messages[0]['parts'][0]}"
+                    
+                    # Create chat and send message
+                    chat = model.start_chat(history=gemini_messages[:-1])
+                    gemini_response = chat.send_message(gemini_messages[-1]["parts"][0])
+                    response = gemini_response.text
+                    st.markdown(response)
+        
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            response = ""
     
-    # Save assistant response
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    # Save assistant response (only if not empty)
+    if response:
+        st.session_state.messages.append({"role": "assistant", "content": response})
