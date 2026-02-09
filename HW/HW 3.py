@@ -59,13 +59,23 @@ def read_url_content(url):
 # ===== SIDEBAR: URL INPUT =====
 st.sidebar.subheader("📎 URL Context (Optional)")
 
-url = st.sidebar.text_input(
-    "Enter URL:",
-    placeholder="https://example.com/article",
-    help="Paste a URL to use as context for answers"
+url_1 = st.sidebar.text_input(
+    "Enter URL 1:",
+    placeholder="https://example.com/article-1",
+    help="Optional first URL for context"
+)
+
+url_2 = st.sidebar.text_input(
+    "Enter URL 2:",
+    placeholder="https://example.com/article-2",
+    help="Optional second URL for context"
 )
 
 st.sidebar.divider()
+
+# Combine URLs - use first URL if available, otherwise second
+url = [u for u in (url_1, url_2) if u]
+
 
 # ===== LLM VENDOR SELECTION =====
 st.sidebar.title("Settings")
