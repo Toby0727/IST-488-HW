@@ -4,3 +4,5 @@ beautifulsoup4
 PyPDF2
 google-generativeai
 anthropic
+chromadb
+pysqlite3-binary
