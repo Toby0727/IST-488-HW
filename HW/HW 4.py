@@ -11,10 +11,10 @@ sys.modules["sqlite3"] = sys.modules["pysqlite3"]
 import chromadb
 
 # Page config
-st.set_page_config(page_title="Hi Aslinur I love you", initial_sidebar_state="expanded")
+st.set_page_config(page_title="HW 4: RAG Chatbot", initial_sidebar_state="expanded")
 
 # ===== BIG TITLE =====
-st.title("HW 4: Chatbot using RAG with HTML Documents")
+st.title("Hi aslinur i love you")
 st.markdown("---")
 
 # ===== DESCRIPTION =====
