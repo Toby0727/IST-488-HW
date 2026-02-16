@@ -14,7 +14,7 @@ import chromadb
 st.set_page_config(page_title="HW 4: RAG Chatbot", initial_sidebar_state="expanded")
 
 # ===== BIG TITLE =====
-st.title("Hi aslinur i love you")
+st.title("HW 4: Chatbot using RAG with HTML Documents")
 st.markdown("---")
 
 # ===== DESCRIPTION =====
