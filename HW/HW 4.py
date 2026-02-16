@@ -2,7 +2,6 @@ from bs4 import BeautifulSoup
 import streamlit as st
 from openai import OpenAI
 import sys
-import shutil
 from pathlib import Path
 
 # Ensure ChromaDB uses a compatible SQLite
@@ -11,13 +10,30 @@ sys.modules["sqlite3"] = sys.modules["pysqlite3"]
 
 import chromadb
 
-
 # Page config
 st.set_page_config(page_title="HW 4: RAG Chatbot", initial_sidebar_state="expanded")
-client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", ""))
 
 # ===== BIG TITLE =====
 st.title("HW 4: Chatbot using RAG with HTML Documents")
+st.markdown("---")
+
+# ===== DESCRIPTION =====
+st.write("""
+### 📚 How This Chatbot Works
+
+**Memory & Context:**
+- I remember the **last 5 conversations** (10 messages: 5 from you, 5 from me)
+- I use a **vector database** to find relevant Syracuse University organization information
+- I combine your conversation history with retrieved documents to give better answers
+
+**Ask me about:**
+- Syracuse University student organizations
+- Club activities, meetings, and events
+- Organization contact information
+
+Let's chat! 🎓
+""")
+
 st.markdown("---")
 
 # ===== CHUNKING FUNCTION =====
@@ -73,244 +89,217 @@ def chunk_text(text):
     
     return [chunk1, chunk2]
 
-
-# ===== VECTOR DATABASE SETUP =====
-# PERSISTENCE STRATEGY: Only create the vector DB if it doesn't already exist
-# This allows the app to run multiple times without re-processing documents
-# and wasting API calls for embeddings
-#
-# The vector DB is stored in: HW/chroma_db/
-# - This is a persistent database that survives app restarts
-# - ChromaDB uses SQLite to store the embeddings and metadata
-#
-# CREATION LOGIC:
-# 1. Check if database already exists and has data
-# 2. If yes: Skip processing and use existing embeddings
-# 3. If no: Process all HTML files, chunk them, and create embeddings
-
-# Create ChromaDB client with persistent storage in the HW folder
+# ===== LOAD PRE-BUILT VECTOR DATABASE =====
 db_path = Path(__file__).parent / "chroma_db"
-db_path.mkdir(parents=True, exist_ok=True)
-chroma_client = chromadb.PersistentClient(path=str(db_path))
-collection = chroma_client.get_or_create_collection(name="HW4Collection")
 
-# Create OpenAI client for embeddings
+if not db_path.exists():
+    st.error("❌ Vector database not found! Make sure 'chroma_db' folder is deployed.")
+    st.stop()
+
+try:
+    chroma_client = chromadb.PersistentClient(path=str(db_path))
+    collection = chroma_client.get_collection(name="HW4Collection")
+    
+    chunk_count = collection.count()
+    st.sidebar.success(f"✅ Vector DB: {chunk_count} chunks loaded")
+    st.sidebar.info(f"🤖 Using: GPT-4o")
+    
+except Exception as e:
+    st.error(f"❌ Error loading vector database: {str(e)}")
+    st.info("Try rebuilding the database with build_database.py")
+    st.stop()
+
+st.sidebar.divider()
+
+# ===== MEMORY BUFFER SETTINGS =====
+st.sidebar.subheader("💾 Conversation Memory")
+
+buffer_size = st.sidebar.slider(
+    "Remember last N interactions:",
+    min_value=1,
+    max_value=10,
+    value=5,
+    step=1,
+    help="Number of conversation exchanges to remember"
+)
+
+st.sidebar.write(f"**Remembering:** Last {buffer_size} exchanges ({buffer_size * 2} messages)")
+
+st.sidebar.divider()
+
+# Create OpenAI client
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = OpenAI(api_key=st.secrets.OPENAI_API_KEY)
-
-# CHECK 1: Does the vector database already have data?
-# If yes, we'll skip re-processing to save time and API costs
-try:
-    existing_count = collection.count()
-except Exception:
-    st.sidebar.warning("ChromaDB failed to load existing data. Rebuilding index.")
-    try:
-        chroma_client.delete_collection(name="HW4Collection")
-    except Exception:
-        try:
-            shutil.rmtree(db_path, ignore_errors=True)
-        except Exception:
-            pass
-
-    chroma_client = chromadb.PersistentClient(path=str(db_path))
-    collection = chroma_client.get_or_create_collection(name="HW4Collection")
-    existing_count = 0
-
-# Define the path to HTML files
-html_folder = Path(__file__).parent / "hw4_data"
-html_files = list(html_folder.glob("*.html")) if html_folder.exists() else []
-
-# CHECK 2: Does the database have the expected number of chunks?
-# Each HTML file creates 2 chunks, so expected count = num_files * 2
-expected_count = len(html_files) * 2
-
-# Rebuild if the database doesn't have the expected number of chunks
-if existing_count < expected_count:
-    st.sidebar.info(f"Vector DB needs updating: {existing_count}/{expected_count} chunks found")
-    try:
-        chroma_client.delete_collection(name="HW4Collection")
-    except Exception:
-        shutil.rmtree(db_path, ignore_errors=True)
-
-    chroma_client = chromadb.PersistentClient(path=str(db_path))
-    collection = chroma_client.get_or_create_collection(name="HW4Collection")
-    existing_count = 0
-else:
-    st.sidebar.success(f"✅ Vector DB already exists with {existing_count} chunks")
-
-# ONLY CREATE VECTOR DB IF IT DOESN'T EXIST
-if existing_count == 0:
-    if html_folder.exists() and html_folder.is_dir():
-        st.sidebar.info("Processing HTML files with chunking...")
-        
-        # Process each HTML file WITH CHUNKING
-        for html_file in html_files:
-            try:
-                # Read HTML and extract text
-                st.sidebar.info(f"Processing {html_file.name}...")
-                with open(html_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    html_content = f.read()
-                
-                # Parse HTML and extract text using BeautifulSoup
-                soup = BeautifulSoup(html_content, 'html.parser')
-                
-                # Remove script and style elements
-                for script in soup(["script", "style"]):
-                    script.decompose()
-                
-                # Get text
-                text_content = soup.get_text(separator=" ", strip=True)
-                
-                # CHUNK THE TEXT INTO 2 MINI-DOCUMENTS
-                # Each HTML file will create exactly 2 chunks
-                if text_content.strip():
-                    chunks = chunk_text(text_content)
-                    st.sidebar.info(f"  → Split into {len(chunks)} chunks")
-                    
-                    # Add each chunk to the collection
-                    for i, chunk in enumerate(chunks):
-                        try:
-                            # Create embedding for this chunk
-                            embedding = st.session_state.openai_client.embeddings.create(
-                                input=chunk,
-                                model="text-embedding-3-small"
-                            ).data[0].embedding
-                            
-                            # Add to ChromaDB collection with unique ID per chunk
-                            collection.add(
-                                documents=[chunk],
-                                embeddings=[embedding],
-                                ids=[f"{html_file.name}_chunk_{i}"],
-                                metadatas=[{
-                                    "filename": html_file.name,
-                                    "chunk_index": i,
-                                    "total_chunks": len(chunks)
-                                }]
-                            )
-                        except Exception as e:
-                            st.sidebar.warning(f"Error embedding chunk {i}: {str(e)}")
-                            continue
-                    
-                    st.sidebar.success(f"✅ Loaded: {html_file.name} ({len(chunks)} chunks)")
-                    
-            except Exception as e:
-                st.sidebar.error(f"Error loading {html_file.name}: {str(e)}")
-
 
 # Store collection in session state
 st.session_state.HW4_VectorDB = collection
 
-st.sidebar.write(
-    f"📚 Chunks in database: {st.session_state.HW4_VectorDB.count()}"
-)
+# ===== HELPER FUNCTION: BUFFER MESSAGES =====
+def get_buffered_messages(all_messages, buffer_size=5):
+    """
+    Keep only the last N user/assistant message pairs
+    Always keeps the system prompt (first message)
+    
+    Args:
+        all_messages: Full conversation history
+        buffer_size: Number of exchanges to keep
+    
+    Returns:
+        Buffered message list with system prompt + recent exchanges
+    """
+    if len(all_messages) <= 1:  # Only system prompt or empty
+        return all_messages
+    
+    # Separate system prompt from conversation
+    system_prompt = all_messages[0] if all_messages[0]["role"] == "system" else None
+    conversation = all_messages[1:] if system_prompt else all_messages
+    
+    # Keep only last N exchanges (N*2 messages)
+    max_messages = buffer_size * 2
+    if len(conversation) <= max_messages:
+        buffered_conversation = conversation
+    else:
+        buffered_conversation = conversation[-max_messages:]
+    
+    # Return system prompt + buffered conversation
+    if system_prompt:
+        return [system_prompt] + buffered_conversation
+    else:
+        return buffered_conversation
 
-# Initialize chat history
+# Initialize chat history (with system prompt)
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    system_prompt = {
+        "role": "system",
+        "content": """You are a Syracuse University organization information assistant.
 
-# Display chat history
+CRITICAL INSTRUCTIONS:
+1. You have access to a vector database of Syracuse University organization profiles
+2. You will receive relevant context from these profiles for each user question
+3. When answering:
+   - If info IS in the context: Cite the organization name and answer based on the context
+   - If info is NOT in the context: Say "I didn't find this in the organization database, but..." and provide general knowledge
+4. Be conversational and helpful
+5. Remember the conversation history - reference previous topics when relevant
+
+Always be clear about whether you're using the organization database or general knowledge."""
+    }
+    st.session_state.messages = [system_prompt]
+
+# Display chat history (skip system prompt)
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    if message["role"] != "system":
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
 # Chat input
 if prompt := st.chat_input("Ask me anything about Syracuse University organizations"):
     
-    # Display user message
+    # Add user message to FULL history
     st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # ALWAYS QUERY THE VECTOR DATABASE FIRST
-    # Step 1: Create embedding for user's question
-    query_embedding = st.session_state.openai_client.embeddings.create(
-        input=prompt,
-        model="text-embedding-3-small"
-    ).data[0].embedding
+    # ===== STEP 1: QUERY VECTOR DATABASE =====
+    with st.spinner("🔍 Searching organization database..."):
+        # Create embedding for user's question
+        query_embedding = st.session_state.openai_client.embeddings.create(
+            input=prompt,
+            model="text-embedding-3-small"
+        ).data[0].embedding
+        
+        # Search the vector database for relevant chunks
+        results = st.session_state.HW4_VectorDB.query(
+            query_embeddings=[query_embedding],
+            n_results=5  # Get top 5 most relevant chunks
+        )
+        
+        # Extract the relevant context
+        relevant_docs = results.get("documents", [[]])[0]
+        context = "\n\n---\n\n".join(relevant_docs) if relevant_docs else ""
+        
+        # Get unique filenames from chunks
+        filenames = set()
+        for metadata in results.get("metadatas", [[]])[0]:
+            filenames.add(metadata.get("filename", "Unknown"))
+        files_used = ", ".join(sorted(filenames)) if filenames else "None"
     
-    # Step 2: Search the vector database for relevant chunks
-    results = st.session_state.HW4_VectorDB.query(
-        query_embeddings=[query_embedding],
-        n_results=5  # Get top 5 most relevant chunks
-    )
+    # ===== STEP 2: CREATE BUFFERED CONVERSATION =====
+    # Get buffered messages (system + last N exchanges)
+    buffered_messages = get_buffered_messages(st.session_state.messages, buffer_size)
     
-    # Step 3: Extract the relevant context
-    relevant_docs = results.get("documents", [[]])[0]
-    context = "\n\n---\n\n".join(relevant_docs) if relevant_docs else ""
-    
-    # Get unique filenames from chunks
-    filenames = set()
-    for metadata in results.get("metadatas", [[]])[0]:
-        filenames.add(metadata.get("filename", "Unknown"))
-    files_used = ", ".join(sorted(filenames))
-    
-    # Step 4: Create system prompt that handles BOTH cases
-    system_prompt = """You are a Syracuse University organization information assistant with access to organization profiles.
+    # ===== STEP 3: AUGMENT LAST USER MESSAGE WITH CONTEXT =====
+    # Replace the last user message with augmented version
+    augmented_user_message = f"""Context from Syracuse University organization pages: {files_used}
 
-CRITICAL INSTRUCTIONS:
-1. You will be provided with context from Syracuse University organization pages
-2. FIRST, check if the answer is in the provided context
-3. If the answer IS in the context:
-   - Start with: "Based on [organization name]..." or "According to [organization page]..."
-   - Cite which specific organization(s) you're using
-   - Answer using ONLY the information from the context
-   
-4. If the answer is NOT in the context:
-   - Start with: "I didn't find this in the organization pages, but..."
-   - Then provide an answer using your general knowledge
-   - Be helpful and informative
-   
-5. Be clear about which case you're in (found in docs vs. using general knowledge)
-
-Examples:
-- Found in docs: "Based on the Alpha Phi Alpha profile, their meeting times are..."
-- Not found: "I didn't find this in the organization pages, but I can help explain..."
-"""
-
-    enhanced_prompt = f"""Context from Syracuse University organization pages: {files_used}
-
+Retrieved Information:
 {context}
+
+---
 
 User Question: {prompt}
 
-Instructions: 
-- If the answer is in the context above, cite your sources and answer based on the organization pages
-- If the answer is NOT in the context, say "I didn't find this in the organization pages, but..." and provide a helpful answer using general knowledge"""
+Instructions: Use the context above if relevant. If not found in context, say so and provide general knowledge."""
     
-    # Step 5: Get response from ChatGPT
+    # Create messages for API call
+    api_messages = buffered_messages[:-1] + [{"role": "user", "content": augmented_user_message}]
+    
+    # ===== STEP 4: GET LLM RESPONSE (GPT-4o) =====
     with st.chat_message("assistant"):
+        client = OpenAI(api_key=st.secrets.OPENAI_API_KEY)
+        
         stream = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": enhanced_prompt}
-            ],
-            stream=True
+            model="gpt-4o",  # Using GPT-4o
+            messages=api_messages,
+            stream=True,
+            temperature=0.7
         )
+        
         response = st.write_stream(stream)
     
-    # Save assistant response
+    # Save assistant response to FULL history
     st.session_state.messages.append({"role": "assistant", "content": response})
     
     # Store results for sidebar display
     st.session_state.last_results = results
 
-# Sidebar to show retrieved chunks
-if st.sidebar.checkbox("Show retrieved chunks"):
+# ===== SIDEBAR: BUFFER STATISTICS =====
+st.sidebar.divider()
+st.sidebar.write("**📊 Memory Statistics:**")
+
+total_exchanges = (len(st.session_state.messages) - 1) // 2  # Exclude system prompt
+st.sidebar.write(f"Total exchanges: {total_exchanges}")
+st.sidebar.write(f"Messages in buffer: {len(get_buffered_messages(st.session_state.messages, buffer_size)) - 1}")
+st.sidebar.write(f"Total messages: {len(st.session_state.messages) - 1}")
+
+if total_exchanges > buffer_size:
+    forgotten = total_exchanges - buffer_size
+    st.sidebar.warning(f"⚠️ {forgotten} older exchanges not in active memory")
+
+# ===== SIDEBAR: SHOW RETRIEVED CHUNKS =====
+st.sidebar.divider()
+
+if st.sidebar.checkbox("Show retrieved documents"):
     if hasattr(st.session_state, 'last_results') and st.session_state.last_results:
         results = st.session_state.last_results
-        st.sidebar.write("### Retrieved Pages:")
+        st.sidebar.write("### 📄 Retrieved Pages:")
         
         for i, metadata in enumerate(results["metadatas"][0], 1):
             filename = metadata.get("filename", "Unknown")
             chunk_idx = metadata.get("chunk_index", 0)
             total = metadata.get("total_chunks", 1)
             st.sidebar.write(f"{i}. **{filename}** (chunk {chunk_idx + 1}/{total})")
-        
     else:
         st.sidebar.write("No retrieval performed yet.")
 
-# Clear chat button
-if st.sidebar.button("Clear Chat History"):
-    st.session_state.messages = []
+# ===== CLEAR CHAT BUTTON =====
+st.sidebar.divider()
+
+if st.sidebar.button("🗑️ Clear Chat History"):
+    # Keep only the system prompt
+    st.session_state.messages = [st.session_state.messages[0]]
+    if hasattr(st.session_state, 'last_results'):
+        del st.session_state.last_results
     st.rerun()
