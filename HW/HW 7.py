@@ -36,6 +36,12 @@ def load_dataframe():
     return df
 
 
+@st.cache_data(show_spinner=False)
+def embed_query(query: str) -> list:
+    model = load_embedding_model()
+    return model.encode([query], show_progress_bar=False).tolist()
+
+
 # ── Text parsing helpers ─────────────────────────────────────────────────────
 def _extract_title(doc: str) -> str:
     for marker in ["Description:", "content:"]:
@@ -56,8 +62,7 @@ def _extract_description(doc: str) -> str:
 # ── RAG retrieval ────────────────────────────────────────────────────────────
 def retrieve(query: str, collection, n_results: int = 10,
              company_filter: str | None = None) -> list[dict]:
-    model = load_embedding_model()
-    query_vec = model.encode([query], show_progress_bar=False).tolist()
+    query_vec = embed_query(query)
     where = {"company": company_filter} if company_filter else None
     results = collection.query(
         query_embeddings=query_vec,
@@ -106,7 +111,7 @@ def call_gemini(messages: list[dict]) -> str:
         return "❌ GEMINI_API_KEY not set in Streamlit secrets."
     genai.configure(api_key=api_key)
     gmodel = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.0-flash",
         system_instruction=SYSTEM_PROMPT,
     )
     prompt = "\n\n".join(
