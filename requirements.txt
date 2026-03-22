@@ -6,3 +6,4 @@ google-generativeai
 anthropic
 chromadb
 pysqlite3-binary
+sentence_transformers
