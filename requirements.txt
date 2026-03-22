@@ -2,7 +2,7 @@ streamlit
 openai
 beautifulsoup4
 PyPDF2
-google-genai
+google-generativeai
 anthropic
 chromadb
 pysqlite3-binary
