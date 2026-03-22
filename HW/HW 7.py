@@ -111,15 +111,18 @@ def call_gemini(messages: list[dict]) -> str:
         return "❌ GEMINI_API_KEY not set in Streamlit secrets."
     genai.configure(api_key=api_key)
     gmodel = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
+        model_name="models/gemini-1.5-pro",
         system_instruction=SYSTEM_PROMPT,
     )
     prompt = "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
         for m in messages
     )
-    response = gmodel.generate_content(prompt)
-    return response.text
+    try:
+        response = gmodel.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"❌ Gemini API error: {e}"
 
 
 def call_openai(messages: list[dict]) -> str:
