@@ -104,25 +104,26 @@ Always cite article numbers [1], [2], etc. when referencing specific stories.
 Be concise, precise, and professional — you are writing for busy lawyers."""
 
 
-def call_gemini(messages: list[dict]) -> str:
-    import google.generativeai as genai
-    api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+def call_claude(messages: list[dict]) -> str:
+    from anthropic import Anthropic
+    api_key = st.secrets.get("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", ""))
     if not api_key:
-        return "❌ GEMINI_API_KEY not set in Streamlit secrets."
-    genai.configure(api_key=api_key)
-    gmodel = genai.GenerativeModel(
-        model_name="models/gemini-1.5-pro",
-        system_instruction=SYSTEM_PROMPT,
-    )
-    prompt = "\n\n".join(
+        return "❌ ANTHROPIC_API_KEY not set in Streamlit secrets."
+    client = Anthropic(api_key=api_key)
+    user_prompt = "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
         for m in messages
     )
     try:
-        response = gmodel.generate_content(prompt)
-        return response.text
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        return response.content[0].text
     except Exception as e:
-        return f"❌ Gemini API error: {e}"
+        return f"❌ Claude API error: {e}"
 
 
 def call_openai(messages: list[dict]) -> str:
@@ -138,8 +139,8 @@ def call_openai(messages: list[dict]) -> str:
 
 def call_llm(messages: list[dict], llm_choice: str) -> tuple[str, float]:
     start = time.time()
-    if llm_choice == "gemini-2.0-flash":
-        response = call_gemini(messages)
+    if llm_choice == "claude-sonnet":
+        response = call_claude(messages)
     else:
         response = call_openai(messages)
     return response, round(time.time() - start, 2)
@@ -331,7 +332,7 @@ ctrl_col1, ctrl_col2 = st.columns([1, 2])
 with ctrl_col1:
     llm_choice = st.radio(
         "Model",
-        ["gemini-2.0-flash", "gpt-4o-mini"],
+        ["claude-sonnet", "gpt-4o-mini"],
         horizontal=True,
     )
 
