@@ -161,9 +161,58 @@ def detect_intent(query: str) -> tuple[str, str | None]:
     return "general", None
 
 
+def _is_new_topic(user_query: str, chat_history: list[dict]) -> bool:
+    """Use a fast LLM call to decide if the user is starting a new topic."""
+    if not chat_history:
+        return True
+    # Build a short summary of recent conversation for the classifier
+    recent = chat_history[-6:]  # last 3 exchanges max
+    convo = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent)
+    from openai import OpenAI
+    api_key = st.secrets.get("OPENAI_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
+    if not api_key:
+        return True  # can't classify, default to new query
+    client = OpenAI(api_key=api_key)
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=1,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": (
+                    "You classify whether a user message is a NEW topic or a FOLLOW-UP "
+                    "to the existing conversation. Reply with exactly one character: "
+                    "N for new topic, F for follow-up."
+                )},
+                {"role": "user", "content": (
+                    f"CONVERSATION SO FAR:\n{convo}\n\n"
+                    f"NEW USER MESSAGE: {user_query}\n\n"
+                    "Is this N (new topic) or F (follow-up)?"
+                )},
+            ],
+        )
+        return resp.choices[0].message.content.strip().upper().startswith("N")
+    except Exception:
+        return True  # on error, default to new query
+
+
 def build_rag_prompt(user_query: str, collection,
                      company_filter: str | None = None) -> tuple[str, list[dict]]:
     intent, entity = detect_intent(user_query)
+
+    # Ask an LLM whether this is a follow-up; if so reuse previous sources
+    prev_sources = st.session_state.get("hw7_sources", [])
+    if prev_sources and not _is_new_topic(user_query, st.session_state.get("hw7_messages", [])):
+        articles = prev_sources
+        context = _articles_to_context(articles)
+        augmented = (
+            "The user is continuing the previous conversation. "
+            "Use the SAME articles below and provide more depth.\n\n"
+            f"RETRIEVED ARTICLES:\n{context}\n\n"
+            f"USER QUESTION: {user_query}"
+        )
+        return augmented, articles
+
     search_q = entity if entity else user_query
     if company_filter:
         search_q = f"{company_filter} {search_q}"
