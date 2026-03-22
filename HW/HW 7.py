@@ -105,20 +105,23 @@ Be concise, precise, and professional — you are writing for busy lawyers."""
 
 
 def call_gemini(messages: list[dict]) -> str:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
     if not api_key:
         return "❌ GEMINI_API_KEY not set in Streamlit secrets."
-    genai.configure(api_key=api_key)
-    gmodel = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        system_instruction=SYSTEM_PROMPT,
-    )
+    client = genai.Client(api_key=api_key)
     prompt = "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
         for m in messages
     )
-    response = gmodel.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-1.5-pro",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+        ),
+    )
     return response.text
 
 
